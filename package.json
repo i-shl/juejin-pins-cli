@@ -1,6 +1,6 @@
 {
   "name": "juejin-pins-cli",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "在终端浏览掘金沸点：列表、详情与评论",
   "type": "module",
   "license": "MIT",

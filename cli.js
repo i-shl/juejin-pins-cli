@@ -113,6 +113,18 @@ const formatTime = (ts) => {
   return new Date(parseInt(ts) * 1000).toLocaleString('zh-CN')
 }
 
+/** pic_list 项可能是 URL 字符串或 { url } 等对象 */
+const picListUrls = (picList) => {
+  if (!Array.isArray(picList)) return []
+  return picList
+    .map((p) => {
+      if (typeof p === 'string') return p
+      if (p && typeof p === 'object') return p.url || p.pic_url || p.src || ''
+      return ''
+    })
+    .filter(Boolean)
+}
+
 const renderPins = () => {
   const lines = []
   lines.push(`${c.brightWhite}🚀 掘金沸点 CLI 浏览器${c.reset}`)
@@ -139,11 +151,14 @@ const renderPins = () => {
       const cc = pin.msg_Info?.comment_count || 0
       const dc = pin.msg_Info?.digg_count || 0
       const time = formatTime(pin.msg_Info?.ctime)
-      const pics = pin.msg_Info?.pic_list || []
+      const picUrls = picListUrls(pin.msg_Info?.pic_list)
       lines.push(`${c.yellow}[${i + 1}]${c.reset} ${c.brightCyan}👤 ${author}${c.reset}`)
       lines.push(`    ${c.white}${content}${c.reset}`)
-      if (pics.length > 0) {
-        lines.push(`    ${c.yellow}📷${c.reset} ${c.gray}${pics[0]}${c.reset}`)
+      if (picUrls.length > 0) {
+        lines.push(`    ${c.yellow}📷 图片${c.reset}`)
+        picUrls.forEach((url, pi) => {
+          lines.push(`    ${c.gray}${pi + 1}. ${url}${c.reset}`)
+        })
       }
       lines.push(`    ${c.gray}💬 ${cc} | 👍 ${dc} | ${time}${c.reset}`)
       lines.push('')
@@ -163,7 +178,7 @@ const renderDetail = () => {
   const content = currentPin.msg_Info?.content || '无内容'
   const cc = currentPin.msg_Info?.comment_count || 0
   const dc = currentPin.msg_Info?.digg_count || 0
-  const pics = currentPin.msg_Info?.pic_list || []
+  const picUrls = picListUrls(currentPin.msg_Info?.pic_list)
 
   const lines = []
   lines.push(`${c.brightWhite}📖 沸点详情${c.reset}`)
@@ -173,10 +188,10 @@ const renderDetail = () => {
   lines.push(`${c.white}${content}${c.reset}`)
   lines.push('')
 
-  if (pics.length > 0) {
+  if (picUrls.length > 0) {
     lines.push(`${c.yellow}📷 图片${c.reset}`)
-    pics.forEach((pic, i) => {
-      lines.push(`   ${c.gray}${i + 1}. ${pic}${c.reset}`)
+    picUrls.forEach((url, i) => {
+      lines.push(`   ${c.gray}${i + 1}. ${url}${c.reset}`)
     })
     lines.push('')
   }
