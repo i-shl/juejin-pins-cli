@@ -7,6 +7,13 @@ const REPLIES_API_URL = 'https://api.juejin.cn/interact_api/v1/reply/list'
 
 const SORT_TYPE = { NEW: 300, HOT: 200 }
 
+/** 清屏并回到光标原点（含滚动缓冲，减轻 Windows 终端叠字） */
+const CLEAR = '\x1b[3J\x1b[2J\x1b[H'
+
+const paint = (content) => {
+  process.stdout.write(CLEAR + content)
+}
+
 // 颜色
 const c = {
   reset: '\x1b[0m',
@@ -59,14 +66,14 @@ const fetchComments = async (msgId) => {
   comments = []
   commentCursor = '0'
   expandedReplies = {}
-  
+
   try {
     let hasMore = true
     while (hasMore) {
       const data = await postJson(COMMENTS_API_URL, {
         cursor: commentCursor, limit: 50, item_id: msgId, item_type: 4, sort_type: 200,
       })
-      
+
       if (data.err_no === 0) {
         const newComments = data.data || []
         comments = comments.concat(newComments)
@@ -76,8 +83,7 @@ const fetchComments = async (msgId) => {
         hasMore = false
       }
     }
-    
-    // 获取所有有回复的评论的全部回复
+
     for (const cm of comments) {
       const replyCount = cm.comment_info?.reply_count || 0
       if (replyCount > (cm.reply_infos?.length || 0)) {
@@ -108,24 +114,24 @@ const formatTime = (ts) => {
 }
 
 const renderPins = () => {
-  console.clear()
-  console.log(`${c.brightWhite}🚀 掘金沸点 CLI 浏览器${c.reset}`)
-  console.log('')
-  const newTab = currentTab === 'new' 
-    ? `${c.green}▶ 最新${c.reset}` 
+  const lines = []
+  lines.push(`${c.brightWhite}🚀 掘金沸点 CLI 浏览器${c.reset}`)
+  lines.push('')
+  const newTab = currentTab === 'new'
+    ? `${c.green}▶ 最新${c.reset}`
     : `${c.gray}  最新${c.reset}`
-  const hotTab = currentTab === 'hot' 
-    ? `${c.green}▶ 热门${c.reset}` 
+  const hotTab = currentTab === 'hot'
+    ? `${c.green}▶ 热门${c.reset}`
     : `${c.gray}  热门${c.reset}`
-  console.log(`  [${newTab}]    [${hotTab}]`)
-  console.log('')
-  
+  lines.push(`  [${newTab}]    [${hotTab}]`)
+  lines.push('')
+
   if (errorMsg) {
-    console.log(`  ${c.red}❌ ${errorMsg}${c.reset}`)
-    console.log('')
+    lines.push(`  ${c.red}❌ ${errorMsg}${c.reset}`)
+    lines.push('')
   } else if (pins.length === 0) {
-    console.log(`  ${c.gray}暂无沸点数据${c.reset}`)
-    console.log('')
+    lines.push(`  ${c.gray}暂无沸点数据${c.reset}`)
+    lines.push('')
   } else {
     pins.forEach((pin, i) => {
       const author = pin.author_user_info?.user_name || '匿名'
@@ -134,20 +140,21 @@ const renderPins = () => {
       const dc = pin.msg_Info?.digg_count || 0
       const time = formatTime(pin.msg_Info?.ctime)
       const pics = pin.msg_Info?.pic_list || []
-      console.log(`${c.yellow}[${i + 1}]${c.reset} ${c.brightCyan}👤 ${author}${c.reset}`)
-      console.log(`    ${c.white}${content}${c.reset}`)
+      lines.push(`${c.yellow}[${i + 1}]${c.reset} ${c.brightCyan}👤 ${author}${c.reset}`)
+      lines.push(`    ${c.white}${content}${c.reset}`)
       if (pics.length > 0) {
-        console.log(`    ${c.yellow}📷${c.reset} ${c.gray}${pics[0]}${c.reset}`)
+        lines.push(`    ${c.yellow}📷${c.reset} ${c.gray}${pics[0]}${c.reset}`)
       }
-      console.log(`    ${c.gray}💬 ${cc} | 👍 ${dc} | ${time}${c.reset}`)
-      console.log('')
+      lines.push(`    ${c.gray}💬 ${cc} | 👍 ${dc} | ${time}${c.reset}`)
+      lines.push('')
     })
   }
-  
-  console.log(`${c.gray}─`.repeat(50) + c.reset)
-  console.log(`${c.green}第 ${currentPage} 页${c.reset} | ${c.cyan}1-10${c.reset}详情 ${c.cyan}←→${c.reset}翻页 ${c.cyan}s${c.reset}刷新 ${c.cyan}new/hot${c.reset}切换 ${c.cyan}q${c.reset}退出`)
-  console.log(`${c.gray}─`.repeat(50) + c.reset)
-  process.stdout.write(`${c.green}> ${c.reset}` + inputBuffer)
+
+  lines.push(`${c.gray}─`.repeat(50) + c.reset)
+  lines.push(`${c.green}第 ${currentPage} 页${c.reset} | ${c.cyan}1-10${c.reset}详情 ${c.cyan}←→${c.reset}翻页 ${c.cyan}s${c.reset}刷新 ${c.cyan}new/hot${c.reset}切换 ${c.cyan}q${c.reset}退出`)
+  lines.push(`${c.gray}─`.repeat(50) + c.reset)
+  lines.push(`${c.green}> ${c.reset}` + inputBuffer)
+  paint(lines.join('\n'))
 }
 
 const renderDetail = () => {
@@ -157,39 +164,38 @@ const renderDetail = () => {
   const cc = currentPin.msg_Info?.comment_count || 0
   const dc = currentPin.msg_Info?.digg_count || 0
   const pics = currentPin.msg_Info?.pic_list || []
-  
-  console.clear()
-  console.log(`${c.brightWhite}📖 沸点详情${c.reset}`)
-  console.log('')
-  console.log(`${c.brightCyan}👤 ${a}${j ? c.gray + ` (${j})` : ''}${c.reset}`)
-  console.log('')
-  console.log(`${c.white}${content}${c.reset}`)
-  console.log('')
-  
-  // 显示图片链接
+
+  const lines = []
+  lines.push(`${c.brightWhite}📖 沸点详情${c.reset}`)
+  lines.push('')
+  lines.push(`${c.brightCyan}👤 ${a}${j ? c.gray + ` (${j})` : ''}${c.reset}`)
+  lines.push('')
+  lines.push(`${c.white}${content}${c.reset}`)
+  lines.push('')
+
   if (pics.length > 0) {
-    console.log(`${c.yellow}📷 图片${c.reset}`)
+    lines.push(`${c.yellow}📷 图片${c.reset}`)
     pics.forEach((pic, i) => {
-      console.log(`   ${c.gray}${i + 1}. ${pic}${c.reset}`)
+      lines.push(`   ${c.gray}${i + 1}. ${pic}${c.reset}`)
     })
-    console.log('')
+    lines.push('')
   }
-  
-  console.log(`${c.yellow}💬 ${cc} | 👍 ${dc}${c.reset}`)
-  console.log('')
-  
+
+  lines.push(`${c.yellow}💬 ${cc} | 👍 ${dc}${c.reset}`)
+  lines.push('')
+
   if (comments.length) {
-    console.log(`${c.gray}─`.repeat(50) + c.reset)
-    console.log(`${c.brightWhite}💬 评论 (${comments.length})${c.reset}`)
-    console.log(`${c.gray}─`.repeat(50) + c.reset)
+    lines.push(`${c.gray}─`.repeat(50) + c.reset)
+    lines.push(`${c.brightWhite}💬 评论 (${comments.length})${c.reset}`)
+    lines.push(`${c.gray}─`.repeat(50) + c.reset)
     comments.forEach((cm, i) => {
       const ca = cm.user_info?.user_name || '匿名'
       const cc2 = cm.comment_info?.comment_content || ''
       const cd = cm.comment_info?.digg_count || 0
       const commentId = cm.comment_id
-      
-      console.log(`${c.yellow}${i + 1}.${c.reset} ${c.cyan}${ca}${c.reset}: ${c.white}${cc2}${c.reset} ${c.gray}👍${cd}${c.reset}`)
-      
+
+      lines.push(`${c.yellow}${i + 1}.${c.reset} ${c.cyan}${ca}${c.reset}: ${c.white}${cc2}${c.reset} ${c.gray}👍${cd}${c.reset}`)
+
       const replies = expandedReplies[commentId] || cm.reply_infos || []
       replies.forEach((reply) => {
         const ra = reply.user_info?.user_name || '匿名'
@@ -197,31 +203,32 @@ const renderDetail = () => {
         const rDiggs = reply.reply_info?.digg_count || 0
         const replyTo = reply.reply_user?.user_name
         if (replyTo) {
-          console.log(`   ${c.gray}└${c.reset} ${c.brightCyan}${ra}${c.reset} ${c.gray}回复${c.reset} ${c.cyan}${replyTo}${c.reset}: ${c.white}${rContent}${c.reset} ${c.gray}👍${rDiggs}${c.reset}`)
+          lines.push(`   ${c.gray}└${c.reset} ${c.brightCyan}${ra}${c.reset} ${c.gray}回复${c.reset} ${c.cyan}${replyTo}${c.reset}: ${c.white}${rContent}${c.reset} ${c.gray}👍${rDiggs}${c.reset}`)
         } else {
-          console.log(`   ${c.gray}└${c.reset} ${c.brightCyan}${ra}${c.reset}: ${c.white}${rContent}${c.reset} ${c.gray}👍${rDiggs}${c.reset}`)
+          lines.push(`   ${c.gray}└${c.reset} ${c.brightCyan}${ra}${c.reset}: ${c.white}${rContent}${c.reset} ${c.gray}👍${rDiggs}${c.reset}`)
         }
       })
-      console.log('')
+      lines.push('')
     })
   }
-  
-  console.log(`${c.gray}─`.repeat(50) + c.reset)
-  console.log(`${c.cyan}Tab${c.reset} 返回列表 | ${c.cyan}q${c.reset} 退出`)
-  console.log(`${c.gray}─`.repeat(50) + c.reset)
-  process.stdout.write(`${c.green}> ${c.reset}` + inputBuffer)
+
+  lines.push(`${c.gray}─`.repeat(50) + c.reset)
+  lines.push(`${c.cyan}Tab${c.reset} 返回列表 | ${c.cyan}q${c.reset} 退出`)
+  lines.push(`${c.gray}─`.repeat(50) + c.reset)
+  lines.push(`${c.green}> ${c.reset}` + inputBuffer)
+  paint(lines.join('\n'))
 }
 
 const handle = async (cmd) => {
   if (currentPin) {
-    if (cmd === 'q') { console.log('\n👋 再见!'); process.exit(0) }
+    if (cmd === 'q') { process.stdout.write('\n👋 再见!\n'); process.exit(0) }
     currentPin = null; comments = []; commentCursor = '0'; expandedReplies = {}
     inputBuffer = ''; renderPins(); return
   }
-  
+
   const k = cmd.toLowerCase()
-  
-  if (k === 'q') { console.log('\n👋 再见!'); process.exit(0) }
+
+  if (k === 'q') { process.stdout.write('\n👋 再见!\n'); process.exit(0) }
   if (k === 's') {
     cursor = '0'; currentPage = 1
     await fetchPins(); inputBuffer = ''; renderPins(); return
@@ -241,13 +248,12 @@ const handle = async (cmd) => {
   if (k === '→' || k === 'right') {
     currentPage++; await fetchPins(); inputBuffer = ''; renderPins(); return
   }
-  
+
   const idx = parseInt(k) - 1
   if (idx >= 0 && idx < pins.length) {
     currentPin = pins[idx]; comments = []; commentCursor = '0'; expandedReplies = {}
     inputBuffer = ''
-    console.clear()
-    console.log(`${c.cyan}⏳ 加载中...${c.reset}`)
+    paint(`${c.cyan}⏳ 加载中...${c.reset}`)
     await fetchComments(currentPin.msg_id)
     renderDetail()
   } else {
@@ -259,29 +265,22 @@ const setupInput = () => {
   if (process.stdin.isTTY) process.stdin.setRawMode(true)
   process.stdin.setEncoding('utf8')
   process.stdin.resume()
-  
+
   let isProcessing = false
-  let ignoreKeys = false
-  
+
   process.stdin.on('data', async (key) => {
-    if (key === '\x03') { console.log('\n👋 再见!'); process.exit(0) }
-    
-    if (ignoreKeys) {
-      if (key === '\r' || key === '\n') ignoreKeys = false
-      return
-    }
-    
+    if (key === '\x03') { process.stdout.write('\n👋 再见!\n'); process.exit(0) }
+
     if (isProcessing) return
-    
+
     if (key === '\t') {
       if (currentPin) {
         isProcessing = true
-        ignoreKeys = true
         try { await handle('tab') } finally { isProcessing = false }
       }
       return
     }
-    
+
     if (key === '\r' || key === '\n') {
       if (inputBuffer.trim()) {
         isProcessing = true
@@ -289,7 +288,7 @@ const setupInput = () => {
       }
       return
     }
-    
+
     if (key === '\b' || key === '\x7f') {
       if (inputBuffer.length) {
         inputBuffer = inputBuffer.slice(0, -1)
@@ -297,7 +296,7 @@ const setupInput = () => {
       }
       return
     }
-    
+
     if (key === '\u001b[D') {
       isProcessing = true
       try { await handle('←') } finally { isProcessing = false }
@@ -308,7 +307,7 @@ const setupInput = () => {
       try { await handle('→') } finally { isProcessing = false }
       return
     }
-    
+
     if (key.length === 1 && key >= ' ') {
       inputBuffer += key
       process.stdout.write(key)
@@ -317,9 +316,9 @@ const setupInput = () => {
 }
 
 const main = async () => {
-  console.log(`${c.cyan}🚀 启动中...${c.reset}`)
-  setupInput()
+  paint(`${c.cyan}🚀 启动中...${c.reset}`)
   await fetchPins()
+  setupInput()
   renderPins()
 }
 
