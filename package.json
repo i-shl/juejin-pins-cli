@@ -1,8 +1,32 @@
 {
   "name": "juejin-pins-cli",
-  "private": true,
   "version": "1.0.0",
+  "description": "在终端浏览掘金沸点：列表、详情与评论",
   "type": "module",
+  "license": "MIT",
+  "author": "i-shl",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/i-shl/juejin-pins-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/i-shl/juejin-pins-cli/issues"
+  },
+  "homepage": "https://github.com/i-shl/juejin-pins-cli#readme",
+  "keywords": [
+    "juejin",
+    "juejin-pins",
+    "cli",
+    "terminal",
+    "沸点",
+    "掘金"
+  ],
+  "files": [
+    "cli.js",
+    "post-json.js",
+    "README.md",
+    "LICENSE"
+  ],
   "engines": {
     "node": ">=18"
   },
