@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import axios from 'axios'
+import { postJson, formatFetchError } from './post-json.js'
 
 const PINS_API_URL = 'https://api.juejin.cn/recommend_api/v1/short_msg/recommend'
 const COMMENTS_API_URL = 'https://api.juejin.cn/interact_api/v1/comment/list'
@@ -39,25 +39,19 @@ const fetchPins = async () => {
   errorMsg = ''
   try {
     const sortType = currentTab === 'new' ? SORT_TYPE.NEW : SORT_TYPE.HOT
-    const res = await axios.post(PINS_API_URL, {
-      id_type: 4, sort_type: sortType, cursor, limit: 10
-    }, { timeout: 10000 })
-    if (res.data.err_no === 0) {
-      pins = res.data.data || []
-      cursor = res.data.cursor || '0'
+    const data = await postJson(PINS_API_URL, {
+      id_type: 4, sort_type: sortType, cursor, limit: 10,
+    })
+    if (data.err_no === 0) {
+      pins = data.data || []
+      cursor = data.cursor || '0'
       if (pins.length === 0) errorMsg = '暂无数据，请按 s 刷新重试'
     } else {
-      errorMsg = 'API错误: ' + res.data.err_msg
+      errorMsg = 'API错误: ' + data.err_msg
     }
   } catch (e) {
     pins = []
-    if (e.code === 'ECONNABORTED' || e.code === 'ETIMEDOUT') {
-      errorMsg = '网络超时，请检查网络后按 s 刷新'
-    } else if (e.code === 'ENOTFOUND' || e.code === 'ECONNREFUSED') {
-      errorMsg = '无法连接服务器，请检查网络后按 s 刷新'
-    } else {
-      errorMsg = '网络请求失败: ' + e.message
-    }
+    errorMsg = formatFetchError(e)
   }
 }
 
@@ -69,15 +63,15 @@ const fetchComments = async (msgId) => {
   try {
     let hasMore = true
     while (hasMore) {
-      const res = await axios.post(COMMENTS_API_URL, {
-        cursor: commentCursor, limit: 50, item_id: msgId, item_type: 4, sort_type: 200
-      }, { timeout: 10000 })
+      const data = await postJson(COMMENTS_API_URL, {
+        cursor: commentCursor, limit: 50, item_id: msgId, item_type: 4, sort_type: 200,
+      })
       
-      if (res.data.err_no === 0) {
-        const newComments = res.data.data || []
+      if (data.err_no === 0) {
+        const newComments = data.data || []
         comments = comments.concat(newComments)
-        commentCursor = res.data.cursor || '0'
-        hasMore = res.data.has_more || false
+        commentCursor = data.cursor || '0'
+        hasMore = data.has_more || false
       } else {
         hasMore = false
       }
@@ -97,11 +91,11 @@ const fetchComments = async (msgId) => {
 
 const fetchReplies = async (commentId, msgId) => {
   try {
-    const res = await axios.post(REPLIES_API_URL, {
-      cursor: '0', limit: 50, comment_id: commentId, item_id: msgId, item_type: 4, sort_type: 200
-    }, { timeout: 10000 })
-    if (res.data.err_no === 0) {
-      expandedReplies[commentId] = res.data.data || []
+    const data = await postJson(REPLIES_API_URL, {
+      cursor: '0', limit: 50, comment_id: commentId, item_id: msgId, item_type: 4, sort_type: 200,
+    })
+    if (data.err_no === 0) {
+      expandedReplies[commentId] = data.data || []
       return true
     }
   } catch (e) {}
