@@ -10,8 +10,22 @@ const SORT_TYPE = { NEW: 300, HOT: 200 }
 /** 清屏并回到光标原点（含滚动缓冲，减轻 Windows 终端叠字） */
 const CLEAR = '\x1b[3J\x1b[2J\x1b[H'
 
-const paint = (content) => {
-  process.stdout.write(CLEAR + content)
+/** 与底栏同宽，便于对齐；终端列数不可用时回退 */
+const MARK_W = 50
+
+/** 当前终端宽度（列） */
+const termCols = () => {
+  const n = process.stdout.columns
+  return n && n > 0 ? n : MARK_W
+}
+
+/** 终端显示宽度估算：ASCII 1，其余按 2（中文等） */
+const displayWidth = (str) => {
+  let w = 0
+  for (const ch of str) {
+    w += ch.codePointAt(0) < 0x80 ? 1 : 2
+  }
+  return w
 }
 
 // 颜色
@@ -29,6 +43,26 @@ const c = {
   brightBlue: '\x1b[94m',
   brightCyan: '\x1b[96m',
   brightWhite: '\x1b[97m',
+  /** 顶部分隔带：深灰底 + 浅灰字（不用品红等艳色） */
+  markBg: '\x1b[100m',
+  markFg: '\x1b[37m',
+}
+
+/**
+ * 顶部分隔带：分页/列表详情切换时若终端残留旧内容，用户可据此判断「以下才是当前屏」
+ */
+const screenTopMarker = () => {
+  const cols = termCols()
+  const row = (text) => `${c.markBg}${c.markFg}${text}${c.reset}`
+  const bar = row('─'.repeat(cols))
+  const tipText = ' ▼ 以下为当前屏内容（上方若有残影请忽略）'
+  const pad = Math.max(0, cols - displayWidth(tipText))
+  const tip = row(tipText + ' '.repeat(pad))
+  return [bar, tip, bar, ''].join('\n')
+}
+
+const paint = (content) => {
+  process.stdout.write(CLEAR + screenTopMarker() + content)
 }
 
 let cursor = '0'
