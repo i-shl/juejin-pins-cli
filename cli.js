@@ -62,7 +62,7 @@ const screenTopMarker = () => {
 }
 
 const paint = (content) => {
-  process.stdout.write(CLEAR + screenTopMarker() + content)
+  process.stdout.write(CLEAR + content)
 }
 
 let cursor = '0'
@@ -75,6 +75,7 @@ let commentCursor = '0'
 let inputBuffer = ''
 let errorMsg = ''
 let expandedReplies = {}
+let pageCursors = ['0']
 
 const fetchPins = async () => {
   errorMsg = ''
@@ -85,8 +86,10 @@ const fetchPins = async () => {
     })
     if (data.err_no === 0) {
       pins = data.data || []
-      cursor = data.cursor || '0'
-      if (pins.length === 0) errorMsg = '暂无数据，请按 s 刷新重试'
+      const nextCursor = data.cursor || '0'
+      pageCursors[currentPage] = nextCursor
+      cursor = nextCursor
+      if (pins.length === 0) errorMsg = '暂无数据，请按 r 刷新重试'
     } else {
       errorMsg = 'API错误: ' + data.err_msg
     }
@@ -186,7 +189,7 @@ const renderPins = () => {
       const dc = pin.msg_Info?.digg_count || 0
       const time = formatTime(pin.msg_Info?.ctime)
       const picUrls = picListUrls(pin.msg_Info?.pic_list)
-      lines.push(`${c.yellow}[${i + 1}]${c.reset} ${c.brightCyan}👤 ${author}${c.reset}`)
+      lines.push(`${c.yellow}[${i}]${c.reset} ${c.brightCyan}👤 ${author}${c.reset}`)
       lines.push(`    ${c.white}${content}${c.reset}`)
       if (picUrls.length > 0) {
         lines.push(`    ${c.yellow}📷 图片${c.reset}`)
@@ -200,7 +203,7 @@ const renderPins = () => {
   }
 
   lines.push(`${c.gray}─`.repeat(50) + c.reset)
-  lines.push(`${c.green}第 ${currentPage} 页${c.reset} | ${c.cyan}1-10${c.reset}详情 ${c.cyan}←→${c.reset}翻页 ${c.cyan}s${c.reset}刷新 ${c.cyan}new/hot${c.reset}切换 ${c.cyan}q${c.reset}退出`)
+  lines.push(`${c.green}第 ${currentPage} 页${c.reset} | ${c.cyan}0-9${c.reset}详情 ${c.cyan}←→/ad${c.reset}翻页 ${c.cyan}r${c.reset}刷新 ${c.cyan}new/hot${c.reset}切换 ${c.cyan}exit${c.reset}退出`)
   lines.push(`${c.gray}─`.repeat(50) + c.reset)
   lines.push(`${c.green}> ${c.reset}` + inputBuffer)
   paint(lines.join('\n'))
@@ -262,7 +265,7 @@ const renderDetail = () => {
   }
 
   lines.push(`${c.gray}─`.repeat(50) + c.reset)
-  lines.push(`${c.cyan}Tab${c.reset} 返回列表 | ${c.cyan}q${c.reset} 退出`)
+  lines.push(`${c.cyan}Tab/q${c.reset} 返回列表`)
   lines.push(`${c.gray}─`.repeat(50) + c.reset)
   lines.push(`${c.green}> ${c.reset}` + inputBuffer)
   paint(lines.join('\n'))
@@ -270,35 +273,37 @@ const renderDetail = () => {
 
 const handle = async (cmd) => {
   if (currentPin) {
-    if (cmd === 'q') { process.stdout.write('\n👋 再见!\n'); process.exit(0) }
-    currentPin = null; comments = []; commentCursor = '0'; expandedReplies = {}
-    inputBuffer = ''; renderPins(); return
+    if (cmd === 'q' || cmd === 'tab') {
+      currentPin = null; comments = []; commentCursor = '0'; expandedReplies = {}
+      inputBuffer = ''; renderPins(); return
+    }
+    inputBuffer = ''; renderDetail(); return
   }
 
   const k = cmd.toLowerCase()
 
-  if (k === 'q') { process.stdout.write('\n👋 再见!\n'); process.exit(0) }
-  if (k === 's') {
-    cursor = '0'; currentPage = 1
+  if (k === 'exit') { process.stdout.write('\n👋 再见!\n'); process.exit(0) }
+  if (k === 'r') {
+    cursor = pageCursors[currentPage - 1] || '0'
     await fetchPins(); inputBuffer = ''; renderPins(); return
   }
   if (k === 'new') {
-    currentTab = 'new'; cursor = '0'; currentPage = 1
+    currentTab = 'new'; cursor = '0'; currentPage = 1; pageCursors = ['0']
     await fetchPins(); inputBuffer = ''; renderPins(); return
   }
   if (k === 'hot') {
-    currentTab = 'hot'; cursor = '0'; currentPage = 1
+    currentTab = 'hot'; cursor = '0'; currentPage = 1; pageCursors = ['0']
     await fetchPins(); inputBuffer = ''; renderPins(); return
   }
   if (k === '←' || k === 'left') {
-    if (currentPage > 1) { currentPage--; cursor = '0'; await fetchPins() }
+    if (currentPage > 1) { currentPage--; cursor = pageCursors[currentPage - 1] || '0'; await fetchPins() }
     inputBuffer = ''; renderPins(); return
   }
   if (k === '→' || k === 'right') {
     currentPage++; await fetchPins(); inputBuffer = ''; renderPins(); return
   }
 
-  const idx = parseInt(k) - 1
+  const idx = parseInt(k)
   if (idx >= 0 && idx < pins.length) {
     currentPin = pins[idx]; comments = []; commentCursor = '0'; expandedReplies = {}
     inputBuffer = ''
@@ -322,6 +327,7 @@ const setupInput = () => {
 
     if (isProcessing) return
 
+    // Tab 返回详情
     if (key === '\t') {
       if (currentPin) {
         isProcessing = true
@@ -330,6 +336,7 @@ const setupInput = () => {
       return
     }
 
+    // Enter 处理输入缓冲区（保留给 new/hot 等文本命令）
     if (key === '\r' || key === '\n') {
       if (inputBuffer.trim()) {
         isProcessing = true
@@ -338,6 +345,7 @@ const setupInput = () => {
       return
     }
 
+    // 退格
     if (key === '\b' || key === '\x7f') {
       if (inputBuffer.length) {
         inputBuffer = inputBuffer.slice(0, -1)
@@ -346,17 +354,45 @@ const setupInput = () => {
       return
     }
 
-    if (key === '\u001b[D') {
+    // a/d 左右翻页
+    if (key === '\u001b[D' || key === 'a' || key === 'A') {
       isProcessing = true
       try { await handle('←') } finally { isProcessing = false }
       return
     }
-    if (key === '\u001b[C') {
+    if (key === '\u001b[C' || key === 'd' || key === 'D') {
       isProcessing = true
       try { await handle('→') } finally { isProcessing = false }
       return
     }
 
+    // q 详情页直接返回，列表页进入输入缓冲
+    if (key === 'q' || key === 'Q') {
+      if (currentPin) {
+        isProcessing = true
+        try { await handle('q') } finally { isProcessing = false }
+      } else {
+        inputBuffer += key
+        process.stdout.write(key)
+      }
+      return
+    }
+
+    // r 直接刷新当前页
+    if (key === 'r' || key === 'R') {
+      isProcessing = true
+      try { await handle('r') } finally { isProcessing = false }
+      return
+    }
+
+    // 0-9 直接跳转详情
+    if (key >= '0' && key <= '9') {
+      isProcessing = true
+      try { await handle(key) } finally { isProcessing = false }
+      return
+    }
+
+    // 其余字符进入输入缓冲区（用于 new/hot 等文本命令）
     if (key.length === 1 && key >= ' ') {
       inputBuffer += key
       process.stdout.write(key)
