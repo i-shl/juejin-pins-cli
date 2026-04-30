@@ -1,12 +1,14 @@
 # juejin-pins-cli
 
-一个简洁的终端浏览掘金沸点命令行工具。
+一个简洁的终端浏览掘金沸点命令行工具，支持在终端中显示图片。
 
 ## 功能
 
 - 📱 浏览掘金沸点（最新/热门）
 - 🔄 分页加载
 - 📖 查看沸点详情和评论
+- 🖼️ 终端显示图片（Sixel 协议 / Unicode 字符画回退）
+- 💬 评论中的图片也会显示
 - ⌨️ 键盘快捷键 + 输入命令
 
 ## 环境要求
@@ -51,11 +53,12 @@ npm uninstall -g juejin-pins-cli
 
 ### 克隆后本地运行
 
-克隆仓库后**无需安装依赖**，直接运行：
+克隆仓库后运行：
 
 ```bash
 git clone https://github.com/i-shl/juejin-pins-cli.git
 cd juejin-pins-cli
+npm install
 node cli.js
 ```
 
@@ -70,6 +73,7 @@ npm start
 在已克隆的项目目录内：
 
 ```bash
+npm install
 npm link
 juejin-pins
 
@@ -89,6 +93,7 @@ npm unlink -g juejin-pins-cli
 | `0-9` | 查看对应沸点详情 |
 | 输入 `new` 后回车 | 切换到最新沸点 |
 | 输入 `hot` 后回车 | 切换到热门沸点 |
+| 输入 `img` 后回车 | 切换图片显示/链接显示 |
 | 输入 `exit` 后回车 | 退出 |
 
 ### 详情页
@@ -96,13 +101,30 @@ npm unlink -g juejin-pins-cli
 | 操作 | 功能 |
 |------|------|
 | `Tab` / `q` | 返回列表 |
+| 输入 `img` 后回车 | 切换图片显示/链接显示 |
+
+## 图片显示
+
+程序默认显示图片链接，输入 `img` 回车切换为显示图片。
+
+### 支持图片显示的终端
+
+| 终端 | 系统 | 显示效果 |
+|------|------|----------|
+| Windows Terminal 1.22+ | Windows | Sixel 真彩色图片 |
+| iTerm2 | macOS | Sixel 真彩色图片 |
+| WezTerm | 跨平台 | Sixel 真彩色图片 |
+| Kitty | Linux/macOS | Sixel 真彩色图片 |
+| VS Code 终端 | 跨平台 | Unicode 字符画 |
+| PowerShell 原生窗口 | Windows | Unicode 字符画 |
+| macOS Terminal.app | macOS | Unicode 字符画 |
 
 ## 项目结构
 
 ```
 juejin-pins-cli/
 ├── cli.js          # 主程序入口
-├── post-json.js    # fetch POST JSON（含超时）
+├── post-json.js    # fetch POST JSON + 图片下载
 ├── package.json
 ├── README.md
 ├── LICENSE
@@ -112,6 +134,10 @@ juejin-pins-cli/
 ## 技术栈
 
 - Node.js 18+（ESM，原生 `fetch`）
+- sharp - WebP 图片解码
+- sixel - Sixel 图片编码
+- terminal-image - Unicode 字符画回退
+- supports-terminal-graphics - 终端图形协议检测
 
 ## 维护者：发布到 npm
 

@@ -1,6 +1,6 @@
 {
   "name": "juejin-pins-cli",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "在终端浏览掘金沸点：列表、详情与评论",
   "type": "module",
   "license": "MIT",
@@ -35,5 +35,11 @@
   },
   "scripts": {
     "start": "node cli.js"
+  },
+  "dependencies": {
+    "sharp": "^0.34.5",
+    "sixel": "^0.16.0",
+    "supports-terminal-graphics": "^0.1.0",
+    "terminal-image": "^4.3.0"
   }
 }
