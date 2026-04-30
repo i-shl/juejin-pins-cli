@@ -1,5 +1,16 @@
 #!/usr/bin/env node
-import { postJson, formatFetchError } from './post-json.js'
+import { postJson, fetchImageBuffer, formatFetchError } from './post-json.js'
+import terminalImage from 'terminal-image'
+import sharp from 'sharp'
+import { image2sixel } from 'sixel'
+import { createSupportsTerminalGraphics } from 'supports-terminal-graphics'
+
+// 检测终端是否支持 Sixel（Windows Terminal 1.22+ 支持）
+const termSupport = createSupportsTerminalGraphics(process.stdout)
+const useSixel = termSupport.sixel || !!process.env.WT_SESSION
+
+/** Sixel 图片宽度（像素），基于终端列数估算 */
+const sixelWidth = (cols) => Math.min(Math.floor(cols * 8), 800)
 
 const PINS_API_URL = 'https://api.juejin.cn/recommend_api/v1/short_msg/recommend'
 const COMMENTS_API_URL = 'https://api.juejin.cn/interact_api/v1/comment/list'
@@ -76,6 +87,10 @@ let inputBuffer = ''
 let errorMsg = ''
 let expandedReplies = {}
 let pageCursors = ['0']
+let showImages = false
+
+// 图片缓存: url -> { buffer, rendered }
+const imageCache = new Map()
 
 const fetchPins = async () => {
   errorMsg = ''
@@ -162,8 +177,38 @@ const picListUrls = (picList) => {
     .filter(Boolean)
 }
 
-const renderPins = () => {
+/** 下载图片并缓存，返回渲染后的字符串（失败返回 null） */
+const getImageRendered = async (url, width) => {
+  const cacheKey = `${url}@${width}`
+  if (imageCache.has(cacheKey)) return imageCache.get(cacheKey)
+
+  try {
+    const buf = await fetchImageBuffer(url)
+    let rendered
+
+    if (useSixel) {
+      const targetPx = typeof width === 'number' && width > 100 ? width : sixelWidth(width)
+      const { data, info } = await sharp(buf)
+        .resize({ width: targetPx, fit: 'inside' })
+        .raw()
+        .ensureAlpha()
+        .toBuffer({ resolveWithObject: true })
+      rendered = image2sixel(new Uint8Array(data), info.width, info.height)
+    } else {
+      rendered = await terminalImage.buffer(buf, { width })
+    }
+
+    imageCache.set(cacheKey, rendered)
+    return rendered
+  } catch (e) {
+    imageCache.set(cacheKey, null)
+    return null
+  }
+}
+
+const renderPins = async () => {
   const lines = []
+  lines.push(screenTopMarker())
   lines.push(`${c.brightWhite}🚀 掘金沸点 CLI 浏览器${c.reset}`)
   lines.push('')
   const newTab = currentTab === 'new'
@@ -182,34 +227,62 @@ const renderPins = () => {
     lines.push(`  ${c.gray}暂无沸点数据${c.reset}`)
     lines.push('')
   } else {
+    // 收集每个沸点的所有图片 URL
+    const thumbWidth = useSixel ? Math.min(Math.floor(termCols() * 4), 400) : Math.min(Math.floor(termCols() * 0.3), 40)
+    let allImageResults = []
+    if (showImages) {
+      const allImageTasks = pins.map((pin) => {
+        const picUrls = picListUrls(pin.msg_Info?.pic_list)
+        return picUrls.map((url) => getImageRendered(url, thumbWidth))
+      })
+      allImageResults = await Promise.all(
+        allImageTasks.map((tasks) => Promise.all(tasks))
+      )
+    }
+
+    // 渲染列表
     pins.forEach((pin, i) => {
       const author = pin.author_user_info?.user_name || '匿名'
       const content = pin.msg_Info?.content || '无内容'
       const cc = pin.msg_Info?.comment_count || 0
       const dc = pin.msg_Info?.digg_count || 0
       const time = formatTime(pin.msg_Info?.ctime)
-      const picUrls = picListUrls(pin.msg_Info?.pic_list)
       lines.push(`${c.yellow}[${i}]${c.reset} ${c.brightCyan}👤 ${author}${c.reset}`)
       lines.push(`    ${c.white}${content}${c.reset}`)
+
+      // 显示图片或链接
+      const picUrls = picListUrls(pin.msg_Info?.pic_list)
       if (picUrls.length > 0) {
-        lines.push(`    ${c.yellow}📷 图片${c.reset}`)
-        picUrls.forEach((url, pi) => {
-          lines.push(`    ${c.gray}${pi + 1}. ${url}${c.reset}`)
-        })
+        if (showImages) {
+          const results = allImageResults[i]
+          results.forEach((rendered) => {
+            if (rendered) {
+              lines.push(rendered)
+            } else {
+              lines.push(`    ${c.yellow}📷 图片加载失败${c.reset}`)
+            }
+          })
+        } else {
+          lines.push(`    ${c.yellow}📷 ${picUrls.length} 张图片${c.reset}`)
+          picUrls.forEach((url, pi) => {
+            lines.push(`    ${c.gray}${pi + 1}. ${url}${c.reset}`)
+          })
+        }
       }
+
       lines.push(`    ${c.gray}💬 ${cc} | 👍 ${dc} | ${time}${c.reset}`)
       lines.push('')
     })
   }
 
-  lines.push(`${c.gray}─`.repeat(50) + c.reset)
-  lines.push(`${c.green}第 ${currentPage} 页${c.reset} | ${c.cyan}0-9${c.reset}详情 ${c.cyan}←→/ad${c.reset}翻页 ${c.cyan}r${c.reset}刷新 ${c.cyan}new/hot${c.reset}切换 ${c.cyan}exit${c.reset}退出`)
-  lines.push(`${c.gray}─`.repeat(50) + c.reset)
+  lines.push(`${c.gray}─`.repeat(termCols()) + c.reset)
+  lines.push(`${c.green}第 ${currentPage} 页${c.reset} | ${c.cyan}0-9${c.reset}详情 ${c.cyan}←→/ad${c.reset}翻页 ${c.cyan}r${c.reset}刷新 ${c.cyan}new/hot${c.reset}切换 ${c.cyan}img${c.reset}切换图片显示 ${c.cyan}exit${c.reset}退出`)
+  lines.push(`${c.gray}─`.repeat(termCols()) + c.reset)
   lines.push(`${c.green}> ${c.reset}` + inputBuffer)
   paint(lines.join('\n'))
 }
 
-const renderDetail = () => {
+const renderDetail = async () => {
   const a = currentPin.author_user_info?.user_name || '匿名'
   const j = currentPin.author_user_info?.job_title || ''
   const content = currentPin.msg_Info?.content || '无内容'
@@ -218,6 +291,7 @@ const renderDetail = () => {
   const picUrls = picListUrls(currentPin.msg_Info?.pic_list)
 
   const lines = []
+  lines.push(screenTopMarker())
   lines.push(`${c.brightWhite}📖 沸点详情${c.reset}`)
   lines.push('')
   lines.push(`${c.brightCyan}👤 ${a}${j ? c.gray + ` (${j})` : ''}${c.reset}`)
@@ -225,11 +299,28 @@ const renderDetail = () => {
   lines.push(`${c.white}${content}${c.reset}`)
   lines.push('')
 
+  const imgWidth = useSixel ? Math.min(Math.floor(termCols() * 8), 800) : Math.min(Math.floor(termCols() * 0.8), 100)
+
   if (picUrls.length > 0) {
-    lines.push(`${c.yellow}📷 图片${c.reset}`)
-    picUrls.forEach((url, i) => {
-      lines.push(`   ${c.gray}${i + 1}. ${url}${c.reset}`)
-    })
+    if (showImages) {
+      lines.push(`${c.yellow}📷 图片 (${picUrls.length} 张)${c.reset}`)
+      const imageResults = await Promise.all(
+        picUrls.map((url) => getImageRendered(url, imgWidth))
+      )
+      picUrls.forEach((url, i) => {
+        const rendered = imageResults[i]
+        if (rendered) {
+          lines.push(rendered)
+        } else {
+          lines.push(`   ${c.gray}${i + 1}. ${url} (加载失败)${c.reset}`)
+        }
+      })
+    } else {
+      lines.push(`${c.yellow}📷 ${picUrls.length} 张图片${c.reset}`)
+      picUrls.forEach((url, i) => {
+        lines.push(`   ${c.gray}${i + 1}. ${url}${c.reset}`)
+      })
+    }
     lines.push('')
   }
 
@@ -237,9 +328,28 @@ const renderDetail = () => {
   lines.push('')
 
   if (comments.length) {
-    lines.push(`${c.gray}─`.repeat(50) + c.reset)
+    lines.push(`${c.gray}─`.repeat(termCols()) + c.reset)
     lines.push(`${c.brightWhite}💬 评论 (${comments.length})${c.reset}`)
-    lines.push(`${c.gray}─`.repeat(50) + c.reset)
+    lines.push(`${c.gray}─`.repeat(termCols()) + c.reset)
+
+    // 预加载所有评论图片
+    const commentImgWidth = imgWidth
+    const commentImgMap = new Map()
+    if (showImages) {
+      const commentImgTasks = []
+      comments.forEach((cm) => {
+        const pics = cm.comment_info?.comment_pics || []
+        pics.forEach((p) => {
+          commentImgTasks.push({ id: cm.comment_id, url: p.pic_url, promise: getImageRendered(p.pic_url, commentImgWidth) })
+        })
+      })
+      const commentImgResults = await Promise.all(commentImgTasks.map((t) => t.promise))
+      commentImgTasks.forEach((t, i) => {
+        if (!commentImgMap.has(t.id)) commentImgMap.set(t.id, [])
+        if (commentImgResults[i]) commentImgMap.get(t.id).push(commentImgResults[i])
+      })
+    }
+
     comments.forEach((cm, i) => {
       const ca = cm.user_info?.user_name || '匿名'
       const cc2 = cm.comment_info?.comment_content || ''
@@ -247,6 +357,19 @@ const renderDetail = () => {
       const commentId = cm.comment_id
 
       lines.push(`${c.yellow}${i + 1}.${c.reset} ${c.cyan}${ca}${c.reset}: ${c.white}${cc2}${c.reset} ${c.gray}👍${cd}${c.reset}`)
+
+      // 显示评论图片或链接
+      const pics = cm.comment_info?.comment_pics || []
+      if (pics.length > 0) {
+        if (showImages) {
+          const cmImgs = commentImgMap.get(commentId) || []
+          cmImgs.forEach((rendered) => lines.push(rendered))
+        } else {
+          pics.forEach((p, pi) => {
+            lines.push(`   ${c.gray}${pi + 1}. ${p.pic_url}${c.reset}`)
+          })
+        }
+      }
 
       const replies = expandedReplies[commentId] || cm.reply_infos || []
       replies.forEach((reply) => {
@@ -264,9 +387,9 @@ const renderDetail = () => {
     })
   }
 
-  lines.push(`${c.gray}─`.repeat(50) + c.reset)
-  lines.push(`${c.cyan}Tab/q${c.reset} 返回列表`)
-  lines.push(`${c.gray}─`.repeat(50) + c.reset)
+  lines.push(`${c.gray}─`.repeat(termCols()) + c.reset)
+  lines.push(`${c.cyan}Tab/q${c.reset} 返回列表 | ${c.cyan}img${c.reset} 切换图片显示`)
+  lines.push(`${c.gray}─`.repeat(termCols()) + c.reset)
   lines.push(`${c.green}> ${c.reset}` + inputBuffer)
   paint(lines.join('\n'))
 }
@@ -275,9 +398,13 @@ const handle = async (cmd) => {
   if (currentPin) {
     if (cmd === 'q' || cmd === 'tab') {
       currentPin = null; comments = []; commentCursor = '0'; expandedReplies = {}
-      inputBuffer = ''; renderPins(); return
+      inputBuffer = ''; await renderPins(); return
     }
-    inputBuffer = ''; renderDetail(); return
+    if (cmd.toLowerCase() === 'img') {
+      showImages = !showImages
+      inputBuffer = ''; await renderDetail(); return
+    }
+    inputBuffer = ''; await renderDetail(); return
   }
 
   const k = cmd.toLowerCase()
@@ -285,22 +412,28 @@ const handle = async (cmd) => {
   if (k === 'exit') { process.stdout.write('\n👋 再见!\n'); process.exit(0) }
   if (k === 'r') {
     cursor = pageCursors[currentPage - 1] || '0'
-    await fetchPins(); inputBuffer = ''; renderPins(); return
+    await fetchPins(); inputBuffer = ''; await renderPins(); return
   }
   if (k === 'new') {
     currentTab = 'new'; cursor = '0'; currentPage = 1; pageCursors = ['0']
-    await fetchPins(); inputBuffer = ''; renderPins(); return
+    await fetchPins(); inputBuffer = ''; await renderPins(); return
   }
   if (k === 'hot') {
     currentTab = 'hot'; cursor = '0'; currentPage = 1; pageCursors = ['0']
-    await fetchPins(); inputBuffer = ''; renderPins(); return
+    await fetchPins(); inputBuffer = ''; await renderPins(); return
+  }
+  if (k === 'img') {
+    showImages = !showImages
+    inputBuffer = ''
+    await renderPins()
+    return
   }
   if (k === '←' || k === 'left') {
     if (currentPage > 1) { currentPage--; cursor = pageCursors[currentPage - 1] || '0'; await fetchPins() }
-    inputBuffer = ''; renderPins(); return
+    inputBuffer = ''; await renderPins(); return
   }
   if (k === '→' || k === 'right') {
-    currentPage++; await fetchPins(); inputBuffer = ''; renderPins(); return
+    currentPage++; await fetchPins(); inputBuffer = ''; await renderPins(); return
   }
 
   const idx = parseInt(k)
@@ -309,9 +442,9 @@ const handle = async (cmd) => {
     inputBuffer = ''
     paint(`${c.cyan}⏳ 加载中...${c.reset}`)
     await fetchComments(currentPin.msg_id)
-    renderDetail()
+    await renderDetail()
   } else {
-    inputBuffer = ''; renderPins()
+    inputBuffer = ''; await renderPins()
   }
 }
 
@@ -404,7 +537,7 @@ const main = async () => {
   paint(`${c.cyan}🚀 启动中...${c.reset}`)
   await fetchPins()
   setupInput()
-  renderPins()
+  await renderPins()
 }
 
 main()

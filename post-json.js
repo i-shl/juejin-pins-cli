@@ -23,6 +23,25 @@ export async function postJson(url, body, timeoutMs = 10_000) {
   }
 }
 
+/** 下载图片并返回原始 Buffer */
+export async function fetchImageBuffer(url, timeoutMs = 15_000) {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+  try {
+    const res = await fetch(url, {
+      headers: {
+        Accept: 'image/*',
+        Referer: 'https://juejin.cn/',
+      },
+      signal: ctrl.signal,
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return Buffer.from(await res.arrayBuffer())
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 /** 与 cli 中 fetch 失败提示一致 */
 export function formatFetchError(err) {
   if (err.name === 'AbortError') {
