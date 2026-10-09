@@ -131,6 +131,10 @@ juejin-pins-cli/
 └── .gitignore
 ```
 
+## 相关项目
+
+> 🧩 更喜欢图形界面？看看 VSCode 扩展版：[juejin-pins-vscode](https://github.com/i-shl/juejin-pins-vscode) — 在 VSCode 中以 Webview 浏览掘金沸点，支持行内展开评论、图片开关等。
+
 ## 技术栈
 
 - Node.js 18+（ESM，原生 `fetch`）
